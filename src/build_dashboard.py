@@ -150,7 +150,8 @@ def main():
   .card {{ background: white; border-radius: 8px; padding: 14px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); min-width: 140px; }}
   .card-label {{ font-size: 0.8rem; color: #666; text-transform: uppercase; }}
   .card-value {{ font-size: 1.6rem; font-weight: 600; }}
-  .charts {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }}
+  .charts {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }}
+  @media (max-width: 900px) {{ .charts {{ grid-template-columns: 1fr; }} }}
 </style>
 </head>
 <body>

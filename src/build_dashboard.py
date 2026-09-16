@@ -155,7 +155,7 @@ def main():
 </head>
 <body>
   <h1>{site_title}</h1>
-  <div class="updated">Última actualización: {last_update} &middot; la página se refresca sola cada {refresh_seconds}s</div>
+  <div class="updated">Última actualización: {last_update} &middot; la página se refresca cada {refresh_seconds}s</div>
   <div class="cards">
     {cards_html}
   </div>

@@ -29,9 +29,21 @@ from db import get_connection, upsert_readings  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config.ini"
+STATE_PATH = ROOT / "data" / "wind_sync_state.txt"
 
 TS_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{6}")
-WIND_COLS = ["date", "time", "wind_speed", "wind_dir"]
+# Variables de flujo (no de la estacion meteo) leidas del full_output de EddyPro.
+FLUX_VARS = ["wind_speed", "wind_dir", "LE", "H", "co2_flux"]
+WIND_COLS = ["date", "time", *FLUX_VARS]
+
+
+def load_last_ghg_ts() -> str:
+    return STATE_PATH.read_text().strip() if STATE_PATH.exists() else ""
+
+
+def save_last_ghg_ts(ts: str) -> None:
+    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    STATE_PATH.write_text(ts)
 
 
 def load_config() -> configparser.ConfigParser:
@@ -45,9 +57,7 @@ def load_config() -> configparser.ConfigParser:
 def full_output_to_long(df: pd.DataFrame) -> pd.DataFrame:
     df = df[WIND_COLS].copy()
     df["timestamp"] = pd.to_datetime(df["date"] + " " + df["time"]).dt.strftime("%Y-%m-%d %H:%M:%S")
-    long_df = df.melt(
-        id_vars="timestamp", value_vars=["wind_speed", "wind_dir"], var_name="variable", value_name="value"
-    )
+    long_df = df.melt(id_vars="timestamp", value_vars=FLUX_VARS, var_name="variable", value_name="value")
     long_df["value"] = pd.to_numeric(long_df["value"], errors="coerce")
     return long_df.dropna(subset=["value"])
 
@@ -73,41 +83,54 @@ def main():
     cfg = load_config()
     eddypro_dir = Path(cfg.get("wind_source", "eddypro_dir"))
     ghg_dir = Path(cfg.get("wind_source", "ghg_dir"))
+    last_ts = load_last_ghg_ts()
 
     conn = get_connection()
     total_new = 0
     errors = []
+    max_loose_ts = last_ts
 
-    loose_files = sorted(eddypro_dir.glob("*full_output*.csv"))
-    loose_files = [p for p in loose_files if not p.name.endswith(".tmp")]
-    print(f"Ficheros full_output sueltos en {eddypro_dir}: {len(loose_files)}")
-    max_loose_ts = ""
-    for i, path in enumerate(loose_files):
-        m = TS_RE.search(path.name)
-        if m:
-            max_loose_ts = max(max_loose_ts, m.group())
-        try:
-            total_new += upsert_readings(conn, parse_loose_full_output(path))
-        except Exception as e:
-            errors.append((path.name, str(e)))
-        if (i + 1) % 2000 == 0:
-            print(f"...sueltos {i+1}/{len(loose_files)}")
+    if not last_ts:
+        # Primera pasada: los full_output sueltos son un historico fijo (la
+        # carpeta eddypro/ ya no recibe exportaciones nuevas), se procesan
+        # una unica vez.
+        loose_files = sorted(eddypro_dir.glob("*full_output*.csv"))
+        loose_files = [p for p in loose_files if not p.name.endswith(".tmp")]
+        print(f"Ficheros full_output sueltos en {eddypro_dir}: {len(loose_files)}")
+        for i, path in enumerate(loose_files):
+            m = TS_RE.search(path.name)
+            if m:
+                max_loose_ts = max(max_loose_ts, m.group())
+            try:
+                total_new += upsert_readings(conn, parse_loose_full_output(path))
+            except Exception as e:
+                errors.append((path.name, str(e)))
+            if (i + 1) % 2000 == 0:
+                print(f"...sueltos {i+1}/{len(loose_files)}")
+    else:
+        print(f"Ficheros sueltos ya procesados en una pasada anterior, se omiten (ultimo .ghg: {last_ts}).")
 
     ghg_files = sorted(ghg_dir.glob("*.ghg"))
     new_ghg = [p for p in ghg_files if TS_RE.search(p.name) and TS_RE.search(p.name).group() > max_loose_ts]
-    print(f"Ficheros .ghg posteriores al ultimo full_output suelto ({max_loose_ts}): {len(new_ghg)}")
+    print(f"Ficheros .ghg nuevos a procesar (posteriores a {max_loose_ts or '(ninguno)'}): {len(new_ghg)}")
+    max_ghg_ts = max_loose_ts
     for i, path in enumerate(new_ghg):
+        m = TS_RE.search(path.name)
         try:
             long_df = parse_ghg_full_output(path)
             if long_df is not None:
                 total_new += upsert_readings(conn, long_df)
+            if m:
+                max_ghg_ts = max(max_ghg_ts, m.group())
         except Exception as e:
             errors.append((path.name, str(e)))
         if (i + 1) % 1000 == 0:
             print(f"...ghg {i+1}/{len(new_ghg)}")
 
     conn.close()
-    print(f"Listo. {total_new} lecturas de viento (wind_speed/wind_dir) guardadas.")
+    if max_ghg_ts:
+        save_last_ghg_ts(max_ghg_ts)
+    print(f"Listo. {total_new} lecturas de flujo ({', '.join(FLUX_VARS)}) guardadas.")
     if errors:
         print(f"{len(errors)} ficheros con error. Primeros 10:")
         for name, err in errors[:10]:

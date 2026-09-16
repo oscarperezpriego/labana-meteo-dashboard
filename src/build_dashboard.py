@@ -64,7 +64,7 @@ def build_current_conditions_html(df: pd.DataFrame, variable_order: list[str] | 
     return "\n".join(cards)
 
 
-def build_charts_html(df: pd.DataFrame, variable_order: list[str] | None = None) -> str:
+def build_charts_html(df: pd.DataFrame, x_range: tuple, variable_order: list[str] | None = None) -> str:
     charts = []
     present = set(df["variable"].unique())
     order = [v for v in variable_order if v in present] if variable_order else sorted(present)
@@ -78,6 +78,10 @@ def build_charts_html(df: pd.DataFrame, variable_order: list[str] | None = None)
             height=320,
             template="plotly_white",
         )
+        # Mismo rango en todas las graficas (si no, cada una se autoajusta a
+        # su propio primer/ultimo dato y la escala temporal deja de ser
+        # comparable entre variables con distinta frecuencia/huecos).
+        fig.update_xaxes(range=x_range)
         include_js = "cdn" if not charts else False
         charts.append(fig.to_html(full_html=False, include_plotlyjs=include_js, div_id=f"chart-{variable}"))
     return "\n".join(charts)
@@ -90,6 +94,8 @@ def main():
     refresh_seconds = cfg.getint("dashboard", "refresh_seconds", fallback=300)
     variables = [v.strip() for v in cfg.get("dashboard", "variables", fallback="").split(",") if v.strip()]
 
+    now = datetime.now()
+    since = now - timedelta(days=days)
     df = load_recent_data(days, variables or None)
     if df.empty:
         cards_html = "<p>Todavía no hay datos sincronizados.</p>"
@@ -97,7 +103,7 @@ def main():
         last_update = "sin datos"
     else:
         cards_html = build_current_conditions_html(df, variables or None)
-        charts_html = build_charts_html(df, variables or None)
+        charts_html = build_charts_html(df, (since, now), variables or None)
         last_update = df["timestamp"].max().strftime("%Y-%m-%d %H:%M:%S")
 
     html = f"""<!DOCTYPE html>

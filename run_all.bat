@@ -6,6 +6,7 @@ cd /d %~dp0
 call venv\Scripts\activate.bat
 
 python src\sync_campbell.py >> data\sync.log 2>&1
+python src\sync_wind.py >> data\sync.log 2>&1
 python src\build_dashboard.py >> data\sync.log 2>&1
 
 git add docs

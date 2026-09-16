@@ -68,9 +68,18 @@ def list_remote_files(cfg) -> list[str]:
 
 
 def download_files(cfg, filenames: list[str]) -> list[Path]:
+    """Descarga solo los ficheros que aun no existen en local -- la carpeta
+    remota acumula el historico completo (miles de ficheros), y volver a
+    bajarlos todos en cada pasada (cada 30 min) tardaria mas que el propio
+    intervalo de la tarea programada."""
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     protocol = cfg.get("server", "protocol", fallback="sftp").lower()
     remote_path = cfg.get("server", "remote_path")
+
+    pending = [name for name in filenames if not (RAW_DIR / name).exists()]
+    skipped = len(filenames) - len(pending)
+    if skipped:
+        print(f"{skipped} ficheros ya presentes en local, se omiten.")
     local_paths = []
 
     if protocol == "sftp":
@@ -85,7 +94,7 @@ def download_files(cfg, filenames: list[str]) -> list[Path]:
                 password=cfg.get("server", "password"),
             )
             with ssh.open_sftp() as sftp:
-                for name in filenames:
+                for name in pending:
                     local_path = RAW_DIR / name
                     sftp.get(f"{remote_path.rstrip('/')}/{name}", str(local_path))
                     local_paths.append(local_path)
@@ -96,7 +105,7 @@ def download_files(cfg, filenames: list[str]) -> list[Path]:
             ftp.connect(cfg.get("server", "host"), cfg.getint("server", "port", fallback=21))
             ftp.login(cfg.get("server", "username"), cfg.get("server", "password"))
             ftp.cwd(remote_path)
-            for name in filenames:
+            for name in pending:
                 local_path = RAW_DIR / name
                 with open(local_path, "wb") as fh:
                     ftp.retrbinary(f"RETR {name}", fh.write)
@@ -137,8 +146,8 @@ def main():
         print("No se encontraron archivos que sincronizar.")
         return
 
-    print(f"Descargando: {filenames}")
     local_paths = download_files(cfg, filenames)
+    print(f"Descargados {len(local_paths)} ficheros nuevos.")
 
     conn = get_connection()
     total_new = 0

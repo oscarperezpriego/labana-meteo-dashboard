@@ -111,8 +111,15 @@ def main():
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="{refresh_seconds}">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>{site_title}</title>
+<script>
+  // meta refresh normal puede servir una copia cacheada del navegador; se
+  // fuerza recarga real anadiendo un parametro que cambia en cada ciclo.
+  setTimeout(() => {{ location.href = location.pathname + "?t=" + Date.now(); }}, {refresh_seconds * 1000});
+</script>
 <style>
   body {{ font-family: -apple-system, Arial, sans-serif; margin: 0; padding: 20px; background: #f7f8fa; color: #222; }}
   h1 {{ font-size: 1.5rem; margin-bottom: 4px; }}

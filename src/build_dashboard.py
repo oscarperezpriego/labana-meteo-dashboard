@@ -21,6 +21,25 @@ ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config.ini"
 DOCS_DIR = ROOT / "docs"
 
+# Nombre completo + unidad de cada variable, para mostrar en tarjetas y
+# gráficas en vez del nombre crudo de columna. Una variable sin entrada aquí
+# se muestra tal cual (nombre crudo, sin unidad).
+VAR_LABELS = {
+    "HRel_Avg": ("Humedad relativa", "%"),
+    "Temp_Avg": ("Temperatura del aire", "°C"),
+    "Rn_Avg": ("Radiación neta", "W/m²"),
+    "wind_speed": ("Velocidad del viento", "m/s"),
+    "wind_dir": ("Dirección del viento", "°"),
+    "LE": ("Flujo de calor latente", "W/m²"),
+    "H": ("Flujo de calor sensible", "W/m²"),
+    "co2_flux": ("Flujo de CO₂", "µmol/m²/s"),
+}
+
+
+def label_for(variable: str) -> str:
+    name, unit = VAR_LABELS.get(variable, (variable, ""))
+    return f"{name} ({unit})" if unit else name
+
 
 def load_config() -> configparser.ConfigParser:
     cfg = configparser.ConfigParser()
@@ -56,7 +75,7 @@ def build_current_conditions_html(df: pd.DataFrame, variable_order: list[str] | 
         cards.append(
             f"""
             <div class="card">
-              <div class="card-label">{variable}</div>
+              <div class="card-label">{label_for(variable)}</div>
               <div class="card-value">{row['value']:.2f}</div>
             </div>
             """
@@ -71,9 +90,12 @@ def build_charts_html(df: pd.DataFrame, x_range: tuple, variable_order: list[str
     for variable in order:
         sub = df[df["variable"] == variable]
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=sub["timestamp"], y=sub["value"], mode="lines", name=variable))
+        # Scattergl (WebGL), no Scatter (SVG): con miles de puntos (variables
+        # de la estacion meteo, ~1 lectura/min) el SVG normal renderiza mal y
+        # la linea se corta a medio grafico sin ningun error visible.
+        fig.add_trace(go.Scattergl(x=sub["timestamp"], y=sub["value"], mode="lines", name=variable))
         fig.update_layout(
-            title=variable,
+            title=label_for(variable),
             margin=dict(l=40, r=20, t=40, b=30),
             height=320,
             template="plotly_white",
